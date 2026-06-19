@@ -8,17 +8,38 @@ const MongoStore = require('connect-mongo');
 const user_collection = require("./models/userModel");
 const society_collection = require("./models/societyModel");
 const visit_collection = require("./models/visitModel");
+const sendWhatsApp = require("./services/whatsappService");
+const WhatsAppLog = require("./models/WhatsAppLog");
 const db = require(__dirname+'/config/db');
 const date = require(__dirname+'/date/date');
 
 // Access environment variables
 dotenv.config();
-const stripe = require('stripe')(process.env.SECRET_KEY);
+console.log("EMAIL_USER =", process.env.EMAIL_USER);
+console.log("RAZORPAY_KEY_ID =", process.env.RAZORPAY_KEY_ID);
+//const stripe = require('stripe')(process.env.SECRET_KEY);
+const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 const app = express()
+const Razorpay = require('razorpay');
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 app.set('view engine','ejs');
 app.use(express.static('public'));
 // Middleware to handle HTTP post requests
 app.use(express.urlencoded({extended: true}));
+app.use(express.json());
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
@@ -89,7 +110,7 @@ app.get("/signup", (req,res) => {
 });
 
 app.get("/register", (req,res) => {
-	res.render("register");
+    res.render("register");
 });
 
 app.get("/home", (req,res) => {
@@ -283,18 +304,19 @@ app.get("/bill", async (req,res) => {
             foundUser.makePayment = totalAmount;
             await foundUser.save();
             
-            res.render("bill", {
-                resident: foundUser,
-                society: foundSociety,
-                totalAmount: totalAmount,
-                pendingDue: due,
-                creditBalance: credit,
-                monthName: date.month,
-                date: date.today,
-                year: date.year,
-                receipt: foundUser.lastPayment,
-                societyResidents: foundUsers,
-                monthlyTotal: monthlyTotal
+           res.render("bill", {
+               resident: foundUser,
+               society: foundSociety,
+               totalAmount: totalAmount,
+               pendingDue: due,
+               creditBalance: credit,
+               monthName: date.month,
+               date: date.today,
+               year: date.year,
+               receipt: foundUser.lastPayment,
+               societyResidents: foundUsers,
+               monthlyTotal: monthlyTotal,
+               razorpayKey: process.env.RAZORPAY_KEY_ID
             });
         } catch(err) {
             console.error(err);
@@ -445,7 +467,7 @@ app.get("/editProfile", (req,res) => {
         res.redirect("/login");
     }
 })
-
+/*
 app.get('/success', async (req, res) => {
     try {
         const session = await stripe.checkout.sessions.retrieve(req.query.session_id);
@@ -471,41 +493,281 @@ app.get('/success', async (req, res) => {
 });
 
 app.post('/checkout-session', async (req, res) => {
-	const session = await stripe.checkout.sessions.create({
-	  payment_method_types: ['card'],
-	  line_items: [
-		{
-		  price_data: {
-			currency: 'inr',
-			product_data: {
-			  name: req.user.societyName,
-			  images: ['https://www.flaticon.com/svg/vstatic/svg/3800/3800518.svg?token=exp=1615226542~hmac=7b5bcc7eceab928716515ebf044f16cd'],
-			},
-			unit_amount: req.user.makePayment*100,
-		  },
-		  quantity: 1,
-		},
-	  ],
-	  mode: 'payment',
-	//   success_url: "http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID}",
-	//   cancel_url: "http://localhost:3000/bill",
-	  success_url: "https://esociety-fdbd.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
-	  cancel_url: "https://esociety-fdbd.onrender.com/bill",
-	});
-  
-	res.json({ id: session.id });
-  });
 
-  app.post("/approveResident",(req,res) => {
-	const user_id = Object.keys(req.body.validate)[0]
-	const validate_state = Object.values(req.body.validate)[0]
-	user_collection.User.updateOne(
-		{_id:user_id},
-		{ $set: {
-			validation: validate_state
-		}}
-	).then(() => res.redirect("/residents"))
-})
+    try {
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'inr',
+                        product_data: {
+                            name: req.user.societyName
+                        },
+                        unit_amount: req.user.makePayment * 100,
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            success_url: "http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url: "http://localhost:3000/bill",
+        });
+
+        res.json({ id: session.id });
+
+    } catch(err) {
+
+        console.log("Stripe Error:", err.message);
+
+        res.status(500).json({
+            success:false,
+            message:"Payment gateway unavailable"
+        });
+    }
+}); 
+*/
+app.get('/download-bill', async (req,res)=>{
+
+    if(!req.isAuthenticated()){
+        return res.redirect('/login');
+    }
+
+    const doc = new PDFDocument();
+
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader(
+        'Content-Disposition',
+        'attachment; filename=bill.pdf'
+    );
+
+    doc.pipe(res);
+
+    doc.fontSize(20);
+    doc.text('Maintenance Bill');
+
+    doc.moveDown();
+
+    doc.text(
+        'Resident: ' +
+        req.user.firstName +
+        ' ' +
+        req.user.lastName
+    );
+
+    doc.text(
+        'Flat: ' +
+        req.user.flatNumber
+    );
+
+    doc.text(
+        'Society: ' +
+        req.user.societyName
+    );
+
+    doc.end();
+});
+
+app.post('/create-order', async (req,res)=>{
+
+    try{
+
+        const order = await razorpay.orders.create({
+            amount: req.user.makePayment * 100,
+            currency: "INR",
+            receipt: "receipt_" + Date.now()
+        });
+
+        res.json(order);
+
+    }catch(err){
+        console.log(err);
+        res.status(500).json({success:false});
+    }
+});
+
+app.post('/payment-success', async(req,res)=>{
+
+    try{
+
+        const user =
+        await user_collection.User.findById(req.user.id);
+
+        const invoice =
+        'INV-' + Date.now();
+
+        user.lastPayment = {
+            date:new Date(),
+            amount:user.makePayment,
+            invoice:invoice
+        };
+
+       if (!user.paymentHistory) {
+       user.paymentHistory = [];
+       }
+      user.paymentHistory.push({
+      amount:user.makePayment,
+      invoice:invoice,
+      paidAt:new Date(),
+      method:'Razorpay'
+});
+
+  await user.save();
+
+  try {
+
+    await sendWhatsApp(
+        `+91${user.phoneNumber}`,
+        `Payment of Rs.${user.makePayment} received successfully. Invoice: ${invoice}`
+    );
+
+    await WhatsAppLog.create({
+        residentId: user._id,
+        mobileNumber: user.phoneNumber,
+        message: `Payment of Rs.${user.makePayment} received successfully.`,
+        status: 'Sent'
+    });
+
+} catch(err) {
+
+    console.log('WhatsApp failed:', err.message);
+
+}
+
+try {
+
+    await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: user.username,
+        subject: 'Maintenance Payment Receipt',
+        html: `
+            <h2>Payment Successful</h2>
+            <p>Invoice: ${invoice}</p>
+            <p>Amount: ₹${user.makePayment}</p>
+            <p>Society: ${user.societyName}</p>
+        `
+    });
+
+} catch(emailErr) {
+
+    console.log(
+        'Email failed:',
+        emailErr.message
+    );
+
+}
+
+res.json({success:true});
+
+       
+
+    }catch(err){
+        console.log(err);
+        res.status(500).json({success:false});
+    }
+});
+
+app.post('/mark-paid', async(req,res)=>{
+
+    try{
+
+        const user =
+        await user_collection.User.findById(req.user.id);
+
+        const invoice = 'INV-' + Date.now();
+
+        user.lastPayment = {
+            date:new Date(),
+            amount:user.makePayment,
+            invoice:invoice
+        };
+
+        if (!user.paymentHistory) {
+            user.paymentHistory = [];
+        }
+
+        user.paymentHistory.push({
+            amount:user.makePayment,
+            invoice:invoice,
+            paidAt:new Date(),
+            method:'Manual'
+        });
+
+        await user.save();
+
+        res.redirect('/bill');
+
+    }catch(err){
+
+        console.log(err);
+        res.redirect('/bill');
+    }
+});
+
+app.post("/approveResident", async (req,res) => {
+
+    try {
+
+        const user_id = Object.keys(req.body.validate)[0];
+        const validate_state = Object.values(req.body.validate)[0];
+
+        await user_collection.User.updateOne(
+            {_id:user_id},
+            {$set:{validation:validate_state}}
+        );
+
+        const approvedUser =
+            await user_collection.User.findById(user_id);
+
+            try {
+
+    await sendWhatsApp(
+        `+91${approvedUser.phoneNumber}`,
+        'Your E-Society account has been approved.'
+    );
+
+    await WhatsAppLog.create({
+        residentId: approvedUser._id,
+        mobileNumber: approvedUser.phoneNumber,
+        message: 'Your account has been approved.',
+        status: 'Sent'
+    });
+
+} catch(err) {
+
+    console.log(
+        'WhatsApp approval failed:',
+        err.message
+    );
+
+}
+
+        try {
+
+    await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: approvedUser.username,
+        subject: 'Account Approved',
+        text: 'Your E-Society account has been approved.'
+    });
+
+} catch(emailErr) {
+
+    console.log(
+        'Approval email failed:',
+        emailErr.message
+    );
+
+}
+
+        res.redirect("/residents");
+
+    } catch(err){
+        console.log(err);
+        res.redirect("/residents");
+    }
+});
 
 app.post("/complaint", (req,res) => {
     user_collection.User.findById(req.user.id)
@@ -733,6 +995,23 @@ app.post("/signup", async (req,res) => {
                     resolve();
                 });
             });
+try {
+
+    await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: user.username,
+        subject: 'Registration Submitted',
+        text: 'Your registration is pending admin approval.'
+    });
+
+} catch(emailErr) {
+
+    console.log(
+        'Signup email failed:',
+        emailErr.message
+    );
+
+}
             
             res.redirect("/home");
         } else {
@@ -766,63 +1045,92 @@ app.post("/signup", async (req,res) => {
     }
 });
 
+
 app.post("/register", async (req,res) => {
+
+    if(
+        req.body.adminSecret !==
+        process.env.ADMIN_SECRET
+    ){
+        return res.status(403).send(
+            "Invalid Admin Secret"
+        );
+    }
+
     try {
-        // Signup only if society not registered
-        const existingSociety = await society_collection.Society.findOne({societyName: req.body.societyName});
-        
-        if(!existingSociety) {
-            const user = await user_collection.User.register(
+
+        const existingSociety =
+        await society_collection.Society.findOne({
+            societyName: req.body.societyName
+        });
+
+        if(existingSociety){
+
+            return res.render(
+                "failure",
                 {
-                    validation: 'approved',
-                    isAdmin: true,
-                    username: req.body.username,
-                    societyName: req.body.societyName,
-                    flatNumber: req.body.flatNumber,
-                    firstName: req.body.firstName,
-                    lastName: req.body.lastName,
-                    phoneNumber: req.body.phoneNumber
-                },
-                req.body.password
+                    message:
+                    "Society already registered",
+
+                    href:
+                    "/register",
+
+                    messageSecondary:
+                    "Resident account?",
+
+                    hrefSecondary:
+                    "/signup",
+
+                    buttonSecondary:
+                    "Create Account"
+                }
             );
-            
-            await new Promise((resolve, reject) => {
-                req.login(user, (err) => {
-                    if(err) return reject(err);
-                    resolve();
-                });
-            });
-            
-            // Create new society in collection
-            const society = new society_collection.Society({
-                societyName: user.societyName,
-                societyAddress: {
-                    address: req.body.address,
-                    city: req.body.city,
-                    district: req.body.district,
-                    postalCode: req.body.postalCode
-                },
-                admin: user.username
-            });
-            
-            await society.save();
-            res.redirect("/home");
-        } else {
-            const failureMessage = "Sorry, society is already registered, Please double-check society name.";
-            const hrefLink = "/register";
-            const secondaryMessage = "Account not created?";
-            const hrefSecondaryLink = "/signup";
-            const secondaryButton = "Create Account";
-            res.render("failure", {
-                message: failureMessage,
-                href: hrefLink,
-                messageSecondary: secondaryMessage,
-                hrefSecondary: hrefSecondaryLink,
-                buttonSecondary: secondaryButton
-            });
         }
-    } catch(err) {
-        console.error(err);
+
+        const user =
+        await user_collection.User.register(
+            {
+                validation:'approved',
+                isAdmin:true,
+                username:req.body.username,
+                societyName:req.body.societyName,
+                flatNumber:req.body.flatNumber,
+                firstName:req.body.firstName,
+                lastName:req.body.lastName,
+                phoneNumber:req.body.phoneNumber
+            },
+            req.body.password
+        );
+
+        await req.login(
+            user,
+            ()=>{}
+        );
+
+        const society =
+        new society_collection.Society({
+
+            societyName:
+            user.societyName,
+
+            societyAddress:{
+                address:req.body.address,
+                city:req.body.city,
+                district:req.body.district,
+                postalCode:req.body.postalCode
+            },
+
+            admin:user.username
+        });
+
+        await society.save();
+
+        res.redirect("/home");
+
+    } catch(err){
+
+        console.log(err);
+
         res.redirect("/register");
     }
 });
@@ -834,6 +1142,48 @@ app.post("/login", passport.authenticate("local", {
 
 app.get("/health", (req, res) => {
     res.status(200).send("Server is running");
+});
+
+app.get('/test-email', async (req,res)=>{
+
+    try{
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: process.env.EMAIL_USER,
+            subject: 'E-Society Test Email',
+            text: 'Nodemailer is working successfully.'
+        });
+
+        res.send('Email sent successfully');
+
+    }catch(err){
+
+        console.log(err);
+        res.send('Email failed');
+    }
+});
+
+app.get('/test-whatsapp', async (req, res) => {
+
+    try {
+
+        const result = await sendWhatsApp(
+            '+919876543210', // replace with your number
+            'E-Society WhatsApp Test'
+        );
+
+        console.log(result.sid);
+
+        res.send('WhatsApp sent successfully');
+
+    } catch (err) {
+
+        console.log(err);
+        res.send('WhatsApp failed');
+
+    }
+
 });
 
 app.listen(

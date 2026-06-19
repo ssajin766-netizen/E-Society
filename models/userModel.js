@@ -2,49 +2,62 @@ const mongoose = require('mongoose');
 const passportLocalMongoose = require('passport-local-mongoose');
 const passport = require('passport');
 
-const userSchema = new mongoose.Schema (
-	{
-		validation: {
-			type: String,
-			required: true,
-			default: 'applied'
-		},
-		isAdmin: {
-			type: Boolean,
-			required: true,
-			default: false
-		},
-		societyName: {
-			type: String,
-			required: true
-		},
-		flatNumber: {
-			type: String,
-			required: true
-		},
-		firstName: {
-			type: String,
-			required: true
-		},
-		lastName: {
-			type: String,
-			required: true
-		},
-		phoneNumber: {
-			type: Number,
-			required: true
-		},
-		complaints: Array,
-		lastPayment: {
-			date: Date,
-			amount: Number,
-			invoice: String
-		},
-		makePayment: Number
-	},
-	{
-		timestamps: true
-	}
+const userSchema = new mongoose.Schema(
+{
+    validation: {
+        type: String,
+        required: true,
+        default: 'applied'
+    },
+    isAdmin: {
+        type: Boolean,
+        required: true,
+        default: false
+    },
+    societyName: {
+        type: String,
+        required: true
+    },
+    flatNumber: {
+        type: String,
+        required: true
+    },
+    firstName: {
+        type: String,
+        required: true
+    },
+    lastName: {
+        type: String,
+        required: true
+    },
+    phoneNumber: {
+        type: Number,
+        required: true
+    },
+
+    complaints: Array,
+
+    lastPayment: {
+        date: Date,
+        amount: Number,
+        invoice: String
+    },
+
+    makePayment: Number,
+
+    paymentHistory: [
+        {
+            amount: Number,
+            invoice: String,
+            paidAt: Date,
+            method: String
+        }
+    ]
+
+},
+{
+    timestamps: true
+}
 );
 
 userSchema.plugin(passportLocalMongoose);

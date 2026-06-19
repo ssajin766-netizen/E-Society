@@ -28,8 +28,12 @@
     "express-session": "^1.17.1",
     "lodash": "^4.17.20",
     "mongoose": "^8.11.0",
+    "nodemailer": "^8.0.10",
     "passport": "^0.7.0",
     "passport-local-mongoose": "^8.0.0",
-    "stripe": "^8.137.0"
+    "pdfkit": "^0.19.0",
+    "razorpay": "^2.9.6",
+    "stripe": "^8.137.0",
+    "twilio": "^6.0.2"
   }
 }

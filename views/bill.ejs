@@ -8,16 +8,20 @@
 <div style="padding:4%; padding-top: 0%; font-family:sans-serif; font-size:15px;">
   <div style="display: flex; justify-content: center ">
     <col-4>
-      <button id="download-btn" class="btn btn-info btn-md text-uppercase" style="border-radius:3rem; max-width:180px; ">
-        Download Bill
-      </button>
-      <button 
-      <% if(totalAmount==0){ %> 
-        disabled
-      <% } %>
-        id="checkout-button" class="btn btn-success btn-md text-uppercase" style="border-radius:3rem; max-width:180px; ">
-        Pay Bill
-      </button>     
+      <a href="/download-bill"
+      class="btn btn-info btn-md text-uppercase"
+      style="border-radius:3rem; max-width:180px;">
+      Download Bill
+      </a>
+     <button
+     id="pay-btn"
+     <% if(totalAmount==0){ %>
+     disabled
+     <% } %>
+     class="btn btn-success btn-md text-uppercase"
+     style="border-radius:3rem; max-width:180px;">
+     Pay Bill
+     </button>    
       <% if(resident.isAdmin){ %>
       <a href="/editBill" class="btn btn-primary btn-md text-uppercase" style="border-radius:3rem; max-width:180px; ">
         Edit Bill
@@ -207,35 +211,6 @@
   <% } %>
 </div>
 
-<script type="text/javascript">
-  // Create an instance of the Stripe object with your publishable API key
-  var stripe = Stripe("pk_test_51ISbSbKm0w4ydVKOdI0dJjnDP1wkND8lSBs02U2bXTT0QX3kRDmLzO38Q6I4SmlsFP3mAaXLAdaFKPhIz2o0axjk00FkI15wzR");
-  var checkoutButton = document.getElementById("checkout-button");
-
-  checkoutButton.addEventListener("click", function () {
-    fetch("/checkout-session", {
-      method: "POST",
-    })
-      .then(function (response) {
-        return response.json();
-      })
-      .then(function (session) {
-        return stripe.redirectToCheckout({ sessionId: session.id });
-      })
-      .then(function (result) {
-        // If redirectToCheckout fails due to a browser or network
-        // error, you should display the localized error message to your
-        // customer using error.message.
-        if (result.error) {
-          alert(result.error.message);
-        }
-      })
-      .catch(function (error) {
-        console.error("Error:", error);
-      });
-  });
-</script>
-
 <script>
   var a = ['','one ','two ','three ','four ', 'five ','six ','seven ','eight ','nine ','ten ','eleven ','twelve ','thirteen ','fourteen ','fifteen ','sixteen ','seventeen ','eighteen ','nineteen '];
   var b = ['', '', 'twenty','thirty','forty','fifty', 'sixty','seventy','eighty','ninety'];
@@ -250,7 +225,93 @@
       str += (n[5] != 0) ? ((str != '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) + 'only ' : '';
       return str;
   }
-  document.getElementById('words').innerHTML = inWords(document.getElementById('number').value);
+  const numberField =
+    document.getElementById('number');
+
+const wordsField =
+    document.getElementById('words');
+
+if(numberField && wordsField){
+    wordsField.innerHTML =
+        inWords(numberField.value);
+}
+</script>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<script>
+
+const payBtn =
+document.getElementById('pay-btn');
+
+if(payBtn){
+
+payBtn.addEventListener(
+'click',
+async ()=>{
+
+    try{
+
+        const response =
+        await fetch('/create-order',{
+            method:'POST'
+        });
+
+        const order =
+        await response.json();
+
+        const options = {
+
+           key: '<%= razorpayKey %>',
+
+            amount:
+            order.amount,
+
+            currency:
+            order.currency,
+
+            name:
+            '<%= society.societyName %>',
+
+            order_id:
+            order.id,
+
+            handler:
+            async function(payment){
+
+                await fetch(
+                '/payment-success',
+                {
+                    method:'POST',
+                    headers:{
+                        'Content-Type':
+                        'application/json'
+                    },
+                    body: JSON.stringify(payment)
+                });
+
+                window.location.reload();
+            }
+        };
+
+        const rzp =
+        new Razorpay(options);
+
+        rzp.open();
+
+    }catch(err){
+
+        console.log(err);
+
+        alert(
+        'Unable to start payment'
+        );
+    }
+});
+
+}
+
 </script>
 
 <%- include('partials/footer') %>
+
